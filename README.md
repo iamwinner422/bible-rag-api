@@ -95,10 +95,6 @@ Example response:
 [
   {
     "reference": "Psaumes 23:1 (LSG)",
-    "book": "Psaumes",
-    "chapter": 23,
-    "verse_start": 1,
-    "verse_end": 1,
     "text": "Cantique de David. L'Éternel est mon berger: je ne manquerai de rien.",
     "score": 0.9,
     "semantic_score": 0.82,
