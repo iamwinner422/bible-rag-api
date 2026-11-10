@@ -1,0 +1,7 @@
+fastapi
+httpx
+numpy
+onnxruntime
+pydantic
+tokenizers
+uvicorn[standard]
