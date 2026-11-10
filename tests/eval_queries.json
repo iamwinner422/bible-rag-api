@@ -1,0 +1,30 @@
+{
+  "dev": [
+    {"q": "que dit la bible sur la peur", "gold": ["Ésaïe 41:10", "Josué 1:9", "Psaumes 23:4", "2 Timothée 1:7", "Jean 14:27", "Matthieu 14:27", "Psaumes 27:1", "Deutéronome 31:6", "1 Jean 4:18", "Ésaïe 43:1"]},
+    {"q": "comment pardonner à quelqu'un qui m'a blessé", "gold": ["Matthieu 6:14", "Matthieu 6:15", "Éphésiens 4:32", "Colossiens 3:13", "Luc 6:37", "Matthieu 18:21", "Matthieu 18:22", "Marc 11:25", "Luc 23:34", "Luc 17:4"]},
+    {"q": "je me sens seul et découragé", "gold": ["Psaumes 34:19", "Deutéronome 31:8", "Matthieu 28:20", "Psaumes 42:5", "Psaumes 42:11", "Psaumes 43:5", "Ésaïe 41:10", "Josué 1:9", "Psaumes 27:10", "Hébreux 13:5", "Psaumes 147:3"]},
+    {"q": "quel est le plus grand commandement", "gold": ["Matthieu 22:36", "Matthieu 22:37", "Matthieu 22:38", "Matthieu 22:39", "Marc 12:28", "Marc 12:29", "Marc 12:30", "Marc 12:31", "Luc 10:27", "Deutéronome 6:5"]},
+    {"q": "pourquoi Dieu permet la souffrance", "gold": ["Romains 8:28", "Jacques 1:2", "Jacques 1:3", "Romains 5:3", "2 Corinthiens 12:9", "1 Pierre 4:12", "Romains 8:18", "Hébreux 12:11", "2 Corinthiens 4:17", "Job 1:21"]},
+    {"q": "qui est Judas Iscariot", "gold": ["Marc 3:19", "Jean 12:4", "Luc 6:16", "Matthieu 26:14", "Jean 6:71", "Jean 13:2", "Matthieu 10:4"]},
+    {"q": "la foi sans les oeuvres est morte", "gold": ["Jacques 2:17", "Jacques 2:26", "Jacques 2:20", "Jacques 2:14", "Jacques 2:18"]},
+    {"q": "Dieu est amour", "gold": ["1 Jean 4:8", "1 Jean 4:16", "Jean 3:16", "1 Jean 4:7", "Romains 5:8", "1 Jean 4:10"]},
+    {"q": "comment être sauvé", "gold": ["Actes des Apôtres 16:31", "Romains 10:9", "Éphésiens 2:8", "Jean 3:16", "Actes des Apôtres 4:12", "Romains 10:13", "Jean 14:6"]},
+    {"q": "Noé et l'arche", "gold": ["Genèse 6:14", "Genèse 6:22", "Genèse 7:1", "Hébreux 11:7", "1 Pierre 3:20", "Genèse 6:13", "Genèse 6:18"]},
+    {"q": "ne pas s'associer aux incrédules", "gold": ["2 Corinthiens 6:14"]},
+    {"q": "la paix intérieure", "gold": ["Philippiens 4:7", "Jean 14:27", "Jean 16:33", "Ésaïe 26:3", "Colossiens 3:15", "Romains 5:1", "Philippiens 4:6"]}
+  ],
+  "test": [
+    {"q": "que dit la bible sur l'argent et les richesses", "gold": ["1 Timothée 6:10", "1 Timothée 6:9", "Matthieu 6:24", "Matthieu 6:19", "Matthieu 6:20", "Luc 12:15", "Marc 10:25", "Hébreux 13:5", "Matthieu 19:24"]},
+    {"q": "Dieu guérit les malades", "gold": ["Psaumes 103:3", "Jacques 5:14", "Jacques 5:15", "Ésaïe 53:5", "Exode 15:26", "Psaumes 147:3", "Jérémie 30:17", "3 Jean 1:2", "Matthieu 8:17"]},
+    {"q": "la prière du Notre Père", "gold": ["Matthieu 6:9", "Matthieu 6:10", "Matthieu 6:11", "Matthieu 6:12", "Matthieu 6:13", "Luc 11:2", "Luc 11:3", "Luc 11:4"]},
+    {"q": "le fruit de l'Esprit", "gold": ["Galates 5:22", "Galates 5:23"]},
+    {"q": "Jésus est ressuscité le troisième jour", "gold": ["1 Corinthiens 15:4", "Luc 24:6", "Luc 24:7", "Matthieu 28:6", "Marc 16:6", "1 Corinthiens 15:3", "Luc 24:46"]},
+    {"q": "honorer son père et sa mère", "gold": ["Exode 20:12", "Éphésiens 6:2", "Éphésiens 6:1", "Deutéronome 5:16", "Matthieu 15:4"]},
+    {"q": "ne vous inquiétez pas du lendemain", "gold": ["Matthieu 6:34", "Matthieu 6:25", "Matthieu 6:31", "Philippiens 4:6", "1 Pierre 5:7", "Luc 12:22", "Matthieu 6:27"]},
+    {"q": "le salaire du péché c'est la mort", "gold": ["Romains 6:23", "Romains 5:12", "Romains 3:23", "Ézéchiel 18:4", "Jacques 1:15"]},
+    {"q": "David et Goliath", "gold": ["1 Samuel 17:4", "1 Samuel 17:45", "1 Samuel 17:49", "1 Samuel 17:50", "1 Samuel 17:23", "1 Samuel 17:51", "1 Samuel 17:48", "1 Samuel 17:32", "1 Samuel 17:40"]},
+    {"q": "Dieu protège avec ses anges", "gold": ["Psaumes 91:11", "Psaumes 34:7", "Hébreux 1:14", "Psaumes 91:4", "Psaumes 121:7", "Matthieu 18:10", "Exode 23:20"]},
+    {"q": "le mari doit aimer sa femme", "gold": ["Éphésiens 5:25", "Éphésiens 5:28", "Éphésiens 5:33", "Colossiens 3:19", "1 Pierre 3:7"]},
+    {"q": "ne jugez pas", "gold": ["Matthieu 7:1", "Matthieu 7:2", "Luc 6:37", "Romains 14:10", "Jacques 4:12", "Matthieu 7:3", "Romains 2:1", "Jean 7:24"]}
+  ]
+}
