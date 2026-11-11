@@ -87,6 +87,8 @@ class BibleReference:
     chapter: int
     verse_start: Optional[int] = None
     verse_end: Optional[int] = None
+    verse_ranges: Optional[list[tuple[int, int]]] = None
+    chapter_end: Optional[int] = None
 
 def parse_reference(query: str) -> Optional[BibleReference]:
     q = query.strip()
@@ -99,13 +101,13 @@ def parse_reference(query: str) -> Optional[BibleReference]:
         ^\s*
         (?P<book>[\w\s]+?)                  # book name
         \s+
-            (?P<chapter>\d{1,3})                # chapter number
-            (?:
-                \s*[:.\s]\s*                    # separator :  :  or  .  or  space
-            (?P<vstart>\d{1,3})             # verse start
-            (?:\s*[-–—]\s*(?P<vend>\d{1,3}))?  # verse end (optional)
+        (?P<chapter>\d{1,3})                 # chapter number
+        (?:\s*[-–—]\s*(?P<chapter_end>\d{1,3}))?
+        (?:
+            \s*[:.\s]\s*                     # separator :  .  or space
+            (?P<verses>\d{1,3}(?:\s*[-–—]\s*\d{1,3})?(?:\s*,\s*\d{1,3}(?:\s*[-–—]\s*\d{1,3})?)*)
         )?
-        \s*$
+        \s*[.,;!?]?$
         """,
         re.VERBOSE | re.IGNORECASE,
     )
@@ -119,13 +121,31 @@ def parse_reference(query: str) -> Optional[BibleReference]:
     if not book:
         return None
 
+    if m.group("chapter_end") and m.group("verses"):
+        return None
+
     chapter = int(m.group("chapter"))
-    vstart = int(m.group("vstart")) if m.group("vstart") else None
-    vend = int(m.group("vend")) if m.group("vend") else vstart
+    chapter_end = int(m.group("chapter_end")) if m.group("chapter_end") else None
+    if chapter_end is not None and chapter_end < chapter:
+        return None
+
+    verse_ranges = []
+    verses = m.group("verses")
+    if verses:
+        for item in re.split(r"\s*,\s*", verses):
+            bounds = re.split(r"\s*[-–—]\s*", item)
+            start = int(bounds[0])
+            end = int(bounds[1]) if len(bounds) == 2 else start
+            verse_ranges.append((start, end))
+
+    verse_start = verse_ranges[0][0] if verse_ranges else None
+    verse_end = verse_ranges[0][1] if verse_ranges else None
 
     return BibleReference(
         book=book,
         chapter=chapter,
-        verse_start=vstart,
-        verse_end=vend,
+        chapter_end=chapter_end,
+        verse_start=verse_start,
+        verse_end=verse_end,
+        verse_ranges=verse_ranges if len(verse_ranges) > 1 else None,
     )

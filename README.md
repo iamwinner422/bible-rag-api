@@ -76,6 +76,11 @@ If the index cannot be loaded, the startup error is logged and the health endpoi
 http://127.0.0.1:8000/search?query=comment%20pardonner%20%C3%A0%20quelqu%27un&responseSize=5
 ```
 
+Bible references can be entered as a book and chapter, optionally followed by a verse or
+verse range (for example, `Jean 3:16-18`). Chapter ranges (`Jean 3-4`) and comma-separated
+verses or ranges (`Jean 3:16,18-20`) are also supported. A trailing sentence punctuation mark
+is ignored.
+
 For an exact phrase, surround the query with double quotes (URL-encode them when needed):
 
 ```text

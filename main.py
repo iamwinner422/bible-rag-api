@@ -77,14 +77,21 @@ def get_reference_verses(ref: BibleReference, meta: list) -> list[dict]:
     for p in meta:
         if p["book"] != ref.book:
             continue
-        if p["chapter"] != ref.chapter:
+        if p["chapter"] < ref.chapter:
+            continue
+        if ref.chapter_end is None and p["chapter"] != ref.chapter:
+            continue
+        if ref.chapter_end is not None and p["chapter"] > ref.chapter_end:
             continue
         # On ne prend que les versets isolés (pas les passages groupés)
         if p.get("start") != p.get("end"):
             continue
 
         verse_num = p["start"]
-        if ref.verse_start is not None:
+        if ref.verse_ranges is not None:
+            if not any(start <= verse_num <= end for start, end in ref.verse_ranges):
+                continue
+        elif ref.verse_start is not None:
             if verse_num < ref.verse_start:
                 continue
             if ref.verse_end is not None and verse_num > ref.verse_end:
@@ -93,7 +100,7 @@ def get_reference_verses(ref: BibleReference, meta: list) -> list[dict]:
         results.append(p)
 
     # Tri par numéro de verset
-    results.sort(key=lambda x: x["start"])
+    results.sort(key=lambda x: (x["chapter"], x["start"]))
     return results
 
 @app.get("/")
