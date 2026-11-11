@@ -97,11 +97,13 @@ def parse_reference(query: str) -> Optional[BibleReference]:
     pattern = re.compile(
         r"""
         ^\s*
-        (?P<book>[\w\s]+?)                  
+        (?P<book>[\w\s]+?)                  # book name
         \s+
-        (?P<chapter>\d{1,3})                
-        (?:[:.]\s*(?P<vstart>\d{1,3})
-            (?:\s*[-–—]\s*(?P<vend>\d{1,3}))? 
+            (?P<chapter>\d{1,3})                # chapter number
+            (?:
+                \s*[:.\s]\s*                    # separator :  :  or  .  or  space
+            (?P<vstart>\d{1,3})             # verse start
+            (?:\s*[-–—]\s*(?P<vend>\d{1,3}))?  # verse end (optional)
         )?
         \s*$
         """,
