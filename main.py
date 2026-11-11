@@ -2,24 +2,23 @@ import json
 import logging
 import os
 from contextlib import asynccontextmanager
+from typing import Optional
 
 import numpy as np
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from search_engine import SearchConfig, SearchEngine
+from reference import parse_reference, BibleReference
 
 OUTPUTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "outputs")
-MAX_RESULTS = 20
+MAX_PAGE_SIZE = 50
 
 log = logging.getLogger("uvicorn.error")
 
-# On Vercel, a serverless instance may freeze while a background thread loads the index,
-# so load it before accepting the first request.
 state = {"engine": None, "meta": None, "error": None}
-
 
 def load_index():
     try:
@@ -30,67 +29,136 @@ def load_index():
         state["engine"] = SearchEngine(emb, meta, config=SearchConfig())
         state["meta"] = meta
         log.info("Search index ready: %d passages", len(meta))
-    except Exception as exc:  # Report through / and /search instead of failing silently.
+    except Exception as exc:
         state["error"] = repr(exc)
         log.exception("Failed to load search index")
-
 
 @asynccontextmanager
 async def lifespan(app):
     load_index()
     yield
 
-
 app = FastAPI(
     title="AI Bible Search API",
     description="Hybrid (semantic + keyword) search in the Louis Segond 1910 French Bible.",
-    version="2.0.0",
+    version="2.1.0",
     lifespan=lifespan,
 )
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["GET"])
 
-
 class VerseResult(BaseModel):
-    reference: str       # e.g. "Matthieu 22:36 (LSG)"
+    reference: str
     text: str
-    score: float         # Final score (0-1): relative confidence, not a relevance percentage.
-    semantic_score: float  # Raw cosine similarity to the query.
-    mots_cles: bool      # Legacy API field: whether a query term appears in the verse.
+    score: float
+    semantic_score: Optional[float] = None
+    mots_cles: bool = False
 
+class PaginatedResponse(BaseModel):
+    query: str
+    mode: str                          # "semantic" or "reference"
+    page: int
+    pageSize: int
+    total: int
+    totalPages: int
+    results: list[VerseResult]
 
 def not_ready():
     if state["error"]:
         return JSONResponse({"status": "error", "detail": state["error"]}, status_code=500)
-    return JSONResponse({"status": "loading", "detail": "The index is loading; please try again in a few seconds."},
-                        status_code=503, headers={"Retry-After": "10"})
+    return JSONResponse(
+        {"status": "loading", "detail": "The index is loading; please try again in a few seconds."},
+        status_code=503,
+        headers={"Retry-After": "10"},
+    )
 
+def get_reference_verses(ref: BibleReference, meta: list) -> list[dict]:
+    """Return the verses corresponding to a reference, in order."""
+    results = []
+    for p in meta:
+        if p["book"] != ref.book:
+            continue
+        if p["chapter"] != ref.chapter:
+            continue
+        # On ne prend que les versets isolés (pas les passages groupés)
+        if p.get("start") != p.get("end"):
+            continue
+
+        verse_num = p["start"]
+        if ref.verse_start is not None:
+            if verse_num < ref.verse_start:
+                continue
+            if ref.verse_end is not None and verse_num > ref.verse_end:
+                continue
+
+        results.append(p)
+
+    # Tri par numéro de verset
+    results.sort(key=lambda x: x["start"])
+    return results
 
 @app.get("/")
-@app.get("/health")
 def health():
-    # Always return 200 so platform health checks pass while the index is loading.
     if state["error"]:
         return {"status": "error", "detail": state["error"]}
     if state["engine"] is None:
         return {"status": "loading"}
     return {"status": "ok", "passages": len(state["meta"])}
 
-
-@app.get("/search", response_model=list[VerseResult])
+@app.get("/search", response_model=PaginatedResponse)
 def search(
-    query: str | None = Query(None, min_length=2, max_length=300,
-                              description='Question or keywords. Use quotes for an exact phrase search.'),
-    responseSize: int = Query(8, description=f"Number of verses (1 to {MAX_RESULTS})"),
+    query: str = Query(..., min_length=2, max_length=300),
+    page: int = Query(1, ge=1, description="Page number (starts at 1)"),
+    pageSize: int = Query(20, ge=1, le=MAX_PAGE_SIZE, description="Number of results per page"),
 ):
-    if not query or not query.strip():
-        return JSONResponse({"detail": "The `query` parameter is required."}, status_code=422)
     engine, meta = state["engine"], state["meta"]
     if engine is None:
         return not_ready()
-    size = min(max(responseSize, 1), MAX_RESULTS)
+
+    query = query.strip()
+    ref = parse_reference(query)
+
+    # ---------- Reference Mode ----------
+    if ref is not None:
+        all_verses = get_reference_verses(ref, meta)
+        total = len(all_verses)
+        total_pages = max(1, (total + pageSize - 1) // pageSize)
+
+        start = (page - 1) * pageSize
+        end = start + pageSize
+        page_verses = all_verses[start:end]
+
+        results = []
+        for p in page_verses:
+            span = str(p["start"]) if p["start"] == p["end"] else f"{p['start']}-{p['end']}"
+            results.append(VerseResult(
+                reference=f"{p['book']} {p['chapter']}:{span} (LSG)",
+                text=p["text"],
+                score=1.0,
+                semantic_score=None,
+                mots_cles=False,
+            ))
+
+        return PaginatedResponse(
+            query=query,
+            mode="reference",
+            page=page,
+            pageSize=pageSize,
+            total=total,
+            totalPages=total_pages,
+            results=results,
+        )
+
+    # ---------- Semantic Mode (existing) ----------
+    hits = engine.search(query, size=200)  # we take a large number to be able to paginate
+    total = len(hits)
+    total_pages = max(1, (total + pageSize - 1) // pageSize)
+
+    start = (page - 1) * pageSize
+    end = start + pageSize
+    page_hits = hits[start:end]
 
     results = []
-    for hit in engine.search(query, size=size):
+    for hit in page_hits:
         p = meta[hit.idx]
         span = str(p["start"]) if p["start"] == p["end"] else f"{p['start']}-{p['end']}"
         results.append(VerseResult(
@@ -100,4 +168,13 @@ def search(
             semantic_score=round(hit.semantic, 3),
             mots_cles=bool(hit.keyword > 0),
         ))
-    return results
+
+    return PaginatedResponse(
+        query=query,
+        mode="semantic",
+        page=page,
+        pageSize=pageSize,
+        total=total,
+        totalPages=total_pages,
+        results=results,
+    )
