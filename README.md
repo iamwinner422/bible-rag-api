@@ -81,6 +81,9 @@ verse range (for example, `Jean 3:16-18`). Chapter ranges (`Jean 3-4`) and comma
 verses or ranges (`Jean 3:16,18-20`) are also supported. A trailing sentence punctuation mark
 is ignored.
 
+Semantic searches return at most 16 verses across all pages. This limit does not apply to
+explicit Bible-reference searches.
+
 For an exact phrase, surround the query with double quotes (URL-encode them when needed):
 
 ```text

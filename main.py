@@ -15,6 +15,7 @@ from reference import parse_reference, BibleReference
 
 OUTPUTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "outputs")
 MAX_PAGE_SIZE = 50
+MAX_SEMANTIC_RESULTS = 16
 
 log = logging.getLogger("uvicorn.error")
 
@@ -156,7 +157,7 @@ def search(
         )
 
     # ---------- Semantic Mode (existing) ----------
-    hits = engine.search(query, size=200)  # we take a large number to be able to paginate
+    hits = engine.search(query, size=MAX_SEMANTIC_RESULTS)[:MAX_SEMANTIC_RESULTS]
     total = len(hits)
     total_pages = max(1, (total + pageSize - 1) // pageSize)
 
