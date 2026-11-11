@@ -29,6 +29,42 @@ _BOILERPLATE = re.compile(
     re.IGNORECASE,
 )
 
+_TEACHING_STRUCTURE = re.compile(
+    r"""
+    (?:dans\s+quel\s+passage|où|quand|en\s+quel\s+endroit|à\s+quel\s+endroit)
+    .{0,60}?                                                
+    (?:enseigne|enseignait|enseignent|enseigné|
+       parle|parlait|parlent|parlé|
+       dit|disait|disent|dit|
+       explique|expliquait|expliqué|
+       montre|montrait|montré|
+       proclame|proclamait|proclamé|
+       donne|donnait|donné)
+    (?:\s+(?:sur|de|du|des|à\s+propos\s+de|au\s+sujet\s+de|concernant))?
+    \s*(?P<topic>.+)
+    """,
+    re.IGNORECASE | re.VERBOSE | re.DOTALL,
+)
+
+
+def rewrite_query(query: str) -> str:
+    """
+    Reformule les questions d'enseignement de façon générale
+    (fonctionne pour Jésus, les prophètes, les apôtres, Moïse, etc.)
+    """
+    q = query.strip()
+
+    m = _TEACHING_STRUCTURE.search(q)
+    if m:
+        topic = m.group("topic").strip(" ?!.")
+        # On force le modèle à chercher l'enseignement + le sujet
+        return f"enseigne {topic} enseignement {topic} {topic}"
+
+    # Nettoyage classique
+    cleaned = _BOILERPLATE.sub("", q).strip(" ?!.")
+    return cleaned if len(cleaned) >= 2 else q
+
+
 
 def clean_query(query):
     """Remove generic question phrasing; keep the original query if nothing remains."""
@@ -163,7 +199,7 @@ class SearchEngine:
         if exact_only:
             query = query[1:-1].strip()
 
-        sem_text = query if exact_only or not c.clean else clean_query(query)
+        sem_text = query if exact_only or not c.clean else rewrite_query(query)
         qv = self.model.embed([sem_text])[0]
         sem = self.emb @ qv
         sem_raw = self.emb @ self.model.embed([query])[0] if sem_text != query else sem
