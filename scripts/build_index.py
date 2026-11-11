@@ -48,13 +48,45 @@ def clean(text):
     return " ".join(text.replace("¶", " ").split())
 
 
-def build_passages(path):
-    """Each passage is one verse. Verse numbers follow the order in the file."""
+def build_passages(path, max_window=3):
+    """
+    Génère :
+    - tous les versets isolés
+    - des passages de 2 à max_window versets consécutifs
+    """
     passages = []
+    
     for name, chapters in load_books(path):
         for c, verses in enumerate(chapters, start=1):
+            n = len(verses)
+            
+            # 1. Versets isolés
             for v, text in enumerate(verses, start=1):
-                passages.append({"book": name, "chapter": c, "start": v, "end": v, "text": clean(text)})
+                passages.append({
+                    "book": name,
+                    "chapter": c,
+                    "start": v,
+                    "end": v,
+                    "text": clean(text),
+                    "type": "verse"
+                })
+            
+            # 2. Passages de 2 à max_window versets
+            for window in range(2, max_window + 1):
+                for start in range(n - window + 1):
+                    end = start + window
+                    texts = [clean(verses[i]) for i in range(start, end)]
+                    combined = " ".join(texts)
+                    
+                    passages.append({
+                        "book": name,
+                        "chapter": c,
+                        "start": start + 1,
+                        "end": end,
+                        "text": combined,
+                        "type": "passage"
+                    })
+    
     return passages
 
 
@@ -66,7 +98,7 @@ def main():
     ap.add_argument("--batch-size", type=int, default=250)
     args = ap.parse_args()
 
-    passages = build_passages(args.data)
+    passages = build_passages(args.data, max_window=3)
     if args.limit:
         passages = passages[:args.limit]
     print(f"Embedding {len(passages)} verses ({MODEL})...")
