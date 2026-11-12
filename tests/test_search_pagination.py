@@ -51,7 +51,7 @@ class SearchPaginationTests(unittest.TestCase):
         self.assertEqual(page_one.totalPages, 2)
         self.assertEqual(len(page_one.results), 10)
         self.assertEqual(page_two.total, 16)
-        self.assertEqual(len(page_two.results), 8)
+        self.assertEqual(len(page_two.results), 6)  # 16 results, 10 per page
 
     def test_reference_search_is_not_capped_at_16_verses(self):
         meta = make_verses(20)

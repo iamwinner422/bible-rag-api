@@ -7,7 +7,8 @@ model service.
 
 ## Features
 
-- Search all 31,102 indexed verses with French questions or keywords.
+- Search 31,102 verses and overlapping 2–3 verse passages (89,739 indexed spans) with French
+  questions or keywords.
 - Combine semantic and lexical search, with a confidence threshold to reject many irrelevant
   queries.
 - Search for an exact phrase by enclosing it in double quotes.
@@ -65,15 +66,17 @@ On startup, the API loads the ONNX model and the prebuilt verse index. Once it i
 - Health status: <http://127.0.0.1:8000/health>
 - Interactive API docs: <http://127.0.0.1:8000/docs>
 
-The health endpoint returns `{"status":"ok","passages":31102}` when the index is ready.
+The health endpoint (also served at `/`) returns
+`{"status":"ok","verses":31102,"passages":89739}` when the index is ready: `verses` counts
+single verses, `passages` counts every indexed span, including the 2–3 verse windows.
 If the index cannot be loaded, the startup error is logged and the health endpoint reports it.
 
 ## Search the Bible
 
-`GET /search` accepts `query` and an optional result count:
+`GET /search` accepts `query`, an optional page number, and an optional page size:
 
 ```text
-http://127.0.0.1:8000/search?query=comment%20pardonner%20%C3%A0%20quelqu%27un&responseSize=5
+http://127.0.0.1:8000/search?query=comment%20pardonner%20%C3%A0%20quelqu%27un&page=1&pageSize=5
 ```
 
 Bible references can be entered as a book and chapter, optionally followed by a verse or
@@ -81,8 +84,8 @@ verse range (for example, `Jean 3:16-18`). Chapter ranges (`Jean 3-4`) and comma
 verses or ranges (`Jean 3:16,18-20`) are also supported. A trailing sentence punctuation mark
 is ignored.
 
-Semantic searches return at most 16 verses across all pages. This limit does not apply to
-explicit Bible-reference searches.
+Semantic searches return at most 16 distinct, non-overlapping verses or passages across all pages.
+This limit does not apply to explicit Bible-reference searches.
 
 For an exact phrase, surround the query with double quotes (URL-encode them when needed):
 
@@ -95,20 +98,29 @@ Parameters:
 | Parameter | Description |
 |---|---|
 | `query` | Required search question or keywords, 2–300 characters. |
-| `responseSize` | Number of results to return; defaults to 8 and is clamped to 1–20. |
+| `page` | Page number, starting at 1; defaults to 1. |
+| `pageSize` | Results per page; defaults to 20 and must be between 1 and 50. |
 
 Example response:
 
 ```json
-[
-  {
-    "reference": "Psaumes 23:1 (LSG)",
-    "text": "Cantique de David. L'Éternel est mon berger: je ne manquerai de rien.",
-    "score": 0.9,
-    "semantic_score": 0.82,
-    "mots_cles": true
-  }
-]
+{
+  "query": "Jusqu'à votre vieillesse je serai le même",
+  "mode": "semantic",
+  "page": 1,
+  "pageSize": 20,
+  "total": 16,
+  "totalPages": 1,
+  "results": [
+    {
+      "reference": "Ésaïe 46:4 (LSG)",
+      "text": "Jusqu'à votre vieillesse je serai le même, Jusqu'à votre vieillesse je vous soutiendrai; ...",
+      "score": 0.928,
+      "semantic_score": 0.826,
+      "mots_cles": true
+    }
+  ]
+}
 ```
 
 `score` is the final ranking score, not a probability. `semantic_score` is the raw cosine
@@ -123,7 +135,10 @@ appears in the verse. A query with no sufficiently convincing match can return a
    stop-word removal, and light stemming.
 3. The engine retrieves semantic and BM25 candidates, then scores them using semantic similarity,
    keyword relevance, query-term coverage, and a phrase bonus.
-4. A confidence threshold can suppress low-scoring results. This is a safeguard, not a guarantee
+4. Overlapping passage windows are collapsed: once a verse span is returned, every lower-ranked
+   hit covering the same verses of that chapter (for example `Ésaïe 46:4-5` after `Ésaïe 46:4`)
+   is dropped, so a result page never shows the same verse several times.
+5. A confidence threshold can suppress low-scoring results. This is a safeguard, not a guarantee
    that every off-topic query will be rejected.
 
 The embedding model is `paraphrase-multilingual-MiniLM-L12-v2`, packaged as ONNX with a reduced
@@ -142,8 +157,9 @@ These tests load the real model and index and exercise the API through FastAPI's
 python -I tests/test_api.py
 ```
 
-The checks cover health status, result fields and ordering, accepted parameters, exact-phrase
-search, validation, result-count limits, and low-confidence queries.
+The checks cover health status and counts, result fields and ordering, pagination, the absence of
+overlapping results, accepted parameters, exact-phrase search, validation, and low-confidence
+queries.
 
 ### Search-quality evaluation
 
