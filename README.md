@@ -129,16 +129,25 @@ appears in the verse. A query with no sufficiently convincing match can return a
 
 ## How search works
 
-1. Generic French question phrasing is removed where recognized (for example,
-   `que dit la bible sur la peur` becomes `la peur`).
+1. The question is kept intact: rewriting it into its topic word (for example `peur`) turns a
+   thematic search into a keyword search, so `SearchConfig.clean` is off by default.
 2. The query and verse text are normalized for keyword search: lowercase, accent removal,
    stop-word removal, and light stemming.
 3. The engine retrieves semantic and BM25 candidates, then scores them using semantic similarity,
-   keyword relevance, query-term coverage, and a phrase bonus.
-4. Overlapping passage windows are collapsed: once a verse span is returned, every lower-ranked
+   keyword relevance, query-term coverage, and a phrase bonus. Questions and personal statements
+   (`comment être sauvé`, `je me sens seul`) use semantic-heavy weights, because a paraphrase
+   rarely shares the words of the verse; verse quotations keep the lexically weighted defaults.
+4. The theme layer (`data/themes.json`, 61 themes and 661 reference verses) promotes curated
+   reference verses. A question
+   like `que dit la bible sur la peur` shares no word with "ne crains rien", so similarity search
+   finds verses that talk *about* fear instead of the verses that answer it; the theme's verses are
+   added as candidates and receive the additive bonus `SearchConfig.w_theme` (0.5). Themes are
+   detected by their own term lists, and expanding the data file is how new themes are covered —
+   no model retraining.
+5. Overlapping passage windows are collapsed: once a verse span is returned, every lower-ranked
    hit covering the same verses of that chapter (for example `Ésaïe 46:4-5` after `Ésaïe 46:4`)
    is dropped, so a result page never shows the same verse several times.
-5. A confidence threshold can suppress low-scoring results. This is a safeguard, not a guarantee
+6. A confidence threshold can suppress low-scoring results. This is a safeguard, not a guarantee
    that every off-topic query will be rejected.
 
 The embedding model is `paraphrase-multilingual-MiniLM-L12-v2`, packaged as ONNX with a reduced
@@ -178,9 +187,18 @@ python -I tests/evaluate_verses.py .
 python -I tests/evaluate_verses.py . --verbose
 ```
 
-These datasets are small and their expected references are not exhaustive. Treat the scores as
-comparative measures between engine versions, not as absolute accuracy estimates. The `test` split
-has also been used during tuning and is not a strictly independent benchmark.
+`tests/eval_queries.json` holds 36 dev and 34 test queries, half of them paraphrased questions that
+do not contain the theme's keyword. Their expected references are not exhaustive, so treat the
+scores as comparative measures between engine versions, not as absolute accuracy estimates. The
+`test` split has also been used during tuning and is not a strictly independent benchmark.
+
+The theme layer was written independently of this dataset, but 216 of the 421 expected references
+are listed in it. Read the scores accordingly. On queries whose expected verse is covered by a
+theme (30 dev, 30 test), Hit@5 rises from 0.23 to 0.67 (dev) and from 0.50 to 0.83 (test). On
+queries outside theme coverage (6 dev, 4 test) Hit@5 is unchanged (0.83 dev, 0.75 test) with MRR
+0.03 lower, because a detected theme outranks some correct hits. Overall: Hit@5 0.33 to 0.69 (dev)
+and 0.53 to 0.82 (test). Adding themes is therefore the cheapest way to improve a topic, and the
+remaining gap is theme coverage rather than ranking quality.
 
 ## Rebuild the index
 
