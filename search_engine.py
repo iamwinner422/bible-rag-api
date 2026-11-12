@@ -4,7 +4,7 @@ Runs on NumPy and ONNX Runtime (no PyTorch or FAISS) to fit within Vercel limits
 """
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import NamedTuple
 
 import numpy as np
@@ -12,6 +12,7 @@ import onnxruntime as ort
 from tokenizers import Tokenizer
 
 from bm25 import BM25, Analyzer, full_phrase_length, phrase_suffix_length, term_coverage
+from themes import ThemeLayer
 
 # paraphrase-multilingual-MiniLM-L12-v2 with a reduced vocabulary of French tokens
 # (Latin alphabet) to keep the deployed API small.
@@ -45,6 +46,56 @@ _TEACHING_STRUCTURE = re.compile(
     """,
     re.IGNORECASE | re.VERBOSE | re.DOTALL,
 )
+
+
+# First word of a question or of a personal statement ("j'ai peur de...", "comment...").
+# Such queries describe a situation rather than quote a verse, so lexical coverage is a poor
+# signal and semantic similarity should dominate.
+_QUESTION_WORDS = {
+    "quel", "quelle", "quels", "quelles", "comment", "pourquoi", "quand", "ou", "où",
+    "qui", "combien", "faut", "dois", "doit", "puis", "peut", "est", "y",
+    "je", "j", "me", "m", "mon", "ma", "mes", "moi", "nous", "on", "tu", "te", "toi",
+}
+
+
+def question_like(query: str) -> bool:
+    """True when the query is a question or a personal statement, not a verse quotation."""
+    q = query.strip()
+    if not q:
+        return False
+    if q.endswith("?"):
+        return True
+
+    q_norm = q.lower().replace("’", "'")
+    q_norm = q_norm.lstrip(" \t\n\r\"'“”‘’([{")
+
+    if q_norm.startswith("que "):
+        rest = q_norm[4:].lstrip()
+        if not re.match(r"^(?:dit|dis|disent|signifie|est-ce|veux|veut|pense|penses|dois|doit|faut|peux|sais|as|a|ai|est|sont)\b", rest):
+            return False
+
+    if q_norm.startswith(("comment", "pourquoi", "quand", "ou", "qui", "combien",
+                          "quel", "quelle", "quels", "quelles",
+                          "qu'est-ce", "qu'est", "qu'a", "qu'y a-t-il")):
+        return True
+
+    if q_norm.startswith(("je", "j", "me", "m", "mon", "ma", "mes", "moi", "nous", "on",
+                          "tu", "te", "toi", "il", "elle", "ils", "elles")):
+        return True
+
+    first_match = re.match(r"^([^\s,;:!?.]+)", q_norm)
+    if not first_match:
+        return False
+
+    first = first_match.group(1)
+    first_base = first.split("'")[0]
+    if first_base in {"que", "qu"}:
+        rest = q_norm[len(first):].lstrip(" \t\n\r\"'“”‘’([{")
+        if re.match(r"^(?:dit|dis|disent|signifie|est-ce|veux|veut|pense|penses|dois|doit|faut|peux|sais|as|a|ai|est|sont)\b", rest):
+            return True
+        return False
+
+    return first_base in _QUESTION_WORDS
 
 
 def rewrite_query(query: str) -> str:
@@ -118,7 +169,15 @@ class SearchConfig:
     depth: int = 60           # Candidates retained per method.
     min_sem: float = 0.30     # Minimum similarity for a semantic candidate.
     stem_len: int = 6         # Light stemming truncation (0 = disabled).
-    clean: bool = True        # Remove generic French phrasing such as "que dit la bible sur …".
+    clean: bool = False       # Remove generic phrasing such as "que dit la bible sur …".
+                              # Off by default: rewriting a question into its topic word turns a
+                              # thematic search into a keyword search (see README).
+    adaptive: bool = True     # Switch to question weights for questions and personal statements.
+    question_w_sem: float = 4.0     # Semantic weight for question-like queries.
+    question_w_kw: float = 0.5      # BM25 weight (a paraphrase rarely shares the verse's words).
+    question_w_cov: float = 1.0     # Query-term coverage weight.
+    question_w_phrase: float = 0.5  # Verbatim phrase weight.
+    question_min_sem: float = 0.25  # A paraphrase often sits around 0.25 cosine similarity.
     prf_docs: int = 0         # Verses used for relevance feedback (0 = disabled; see README).
     prf_beta: float = 0.7     # Centroid weight in the expanded query.
     prf_min_sem: float = 0.40 # A verse must be this close to the query to seed feedback.
@@ -127,6 +186,15 @@ class SearchConfig:
     sem_ceil: float = 1.00    # ...and to 1 above this ceiling (kept at 1.0 so a verbatim quote,
                               # whose cosine is ~0.83, is not clamped to a saturated 1.0 score).
     min_top_score: float = 0.19  # Return no results below this best-match score (0 = disabled).
+    w_theme: float = 0.5      # Additive bonus for the theme layer's reference verses (0 = disabled).
+
+    def for_query(self, query, exact_only):
+        """Return the config to rank this query with."""
+        if not self.adaptive or exact_only or not question_like(query):
+            return self
+        return replace(self, w_sem=self.question_w_sem, w_kw=self.question_w_kw,
+                       w_cov=self.question_w_cov, w_phrase=self.question_w_phrase,
+                       min_sem=self.question_min_sem)
 
 
 class Hit(NamedTuple):
@@ -137,20 +205,24 @@ class Hit(NamedTuple):
 
 
 class SearchEngine:
-    def __init__(self, emb, meta, config=None, model=None, **overrides):
+    def __init__(self, emb, meta, config=None, model=None, themes=None, **overrides):
         self.cfg = config or SearchConfig(**overrides)
         self.model = model or load_model()
         self.emb = emb
         self.meta = meta
         self.analyzer = Analyzer(stem_len=self.cfg.stem_len)
         self.keywords = BM25([p["text"] for p in meta], self.analyzer)
+        self.themes = ThemeLayer(meta) if themes is None else themes
 
     # -- ranking ------------------------------------------------------------------------------
-    def _rank(self, sem, kw, query, exact_only, cache):
+    def _rank(self, sem, kw, query, exact_only, cache, cfg, boost=None):
         """Rank candidates; return [(idx, final score)] from best to worst."""
-        c = self.cfg
+        c = cfg
         candidates = {int(i) for i in np.argsort(-sem)[:c.depth] if sem[i] >= c.min_sem}
         candidates |= {int(i) for i in np.argsort(-kw)[:c.depth] if kw[i] > 0}
+        if boost is not None:
+            # A theme's reference verses are candidates even when neither method ranked them.
+            candidates |= {int(i) for i in np.flatnonzero(boost > 0)}
         if not candidates:
             return []
 
@@ -172,7 +244,8 @@ class SearchEngine:
             # A verse selected only by an isolated word (no semantic match, phrase, or meaningful
             # query coverage) is lexical noise, so discard it.
             candidates = {i for i in candidates
-                          if sem[i] >= c.min_sem or feats[i][0] > 0 or feats[i][1] >= 0.5}
+                          if sem[i] >= c.min_sem or feats[i][0] > 0 or feats[i][1] >= 0.5
+                          or (boost is not None and boost[i] > 0)}
 
         ids = list(candidates)
         s_vals = np.array([sem[i] for i in ids], dtype="float32")
@@ -187,6 +260,10 @@ class SearchEngine:
         k_n = np.minimum(k_vals / c.kw_scale, 1.0)
         total = c.w_sem + c.w_kw + c.w_cov + c.w_phrase
         score = (c.w_sem * s_n + c.w_kw * k_n + c.w_cov * cover + c.w_phrase * phrase) / total
+        if boost is not None and c.w_theme > 0:
+            # Additive bonus: a themed verse whose own cosine is mediocre (a single verse reads
+            # differently from the wider passage) must still be able to outrank a merely topical one.
+            score = np.minimum(score + c.w_theme * np.array([boost[i] for i in ids], dtype="float32"), 1.0)
         order = sorted(range(len(ids)), key=lambda j: (-float(score[j]), ids[j]))
         return [(ids[j], float(score[j])) for j in order]
 
@@ -218,6 +295,7 @@ class SearchEngine:
         if exact_only:
             query = query[1:-1].strip()
 
+        cfg = c.for_query(query, exact_only)
         sem_text = query if exact_only or not c.clean else rewrite_query(query)
         qv = self.model.embed([sem_text])[0]
         sem = self.emb @ qv
@@ -228,7 +306,8 @@ class SearchEngine:
 
         kw = self.keywords.scores(query)
         cache = {}
-        ranked = self._rank(sem, kw, query, exact_only, cache)
+        boost = None if exact_only else self.themes.match(query)[0]
+        ranked = self._rank(sem, kw, query, exact_only, cache, cfg, boost)
 
         # Relevance feedback: expand the query using the centroid of the best verses
         # (in embedding space, without another model call), then rank again.
@@ -238,7 +317,7 @@ class SearchEngine:
                 centroid = self.emb[seeds].mean(0)
                 qv2 = qv + c.prf_beta * centroid / np.linalg.norm(centroid)
                 sem = self.emb @ (qv2 / np.linalg.norm(qv2))
-                ranked = self._rank(sem, kw, query, exact_only, cache)
+                ranked = self._rank(sem, kw, query, exact_only, cache, cfg, boost)
 
         if not ranked or ranked[0][1] < c.min_top_score:
             return []  # No convincing answer (off-topic query, gibberish, etc.).
