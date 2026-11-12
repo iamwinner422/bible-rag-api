@@ -124,8 +124,9 @@ class SearchConfig:
     prf_min_sem: float = 0.40 # A verse must be this close to the query to seed feedback.
     kw_scale: float = 10.0    # A BM25 score of 10 (about one well-placed rare term) counts as 1.
     sem_floor: float = 0.20   # Cosine similarity maps to 0 below this floor...
-    sem_ceil: float = 0.80    # ...and to 1 above this ceiling.
-    min_top_score: float = 0.25  # Return no results below this best-match score (0 = disabled).
+    sem_ceil: float = 1.00    # ...and to 1 above this ceiling (kept at 1.0 so a verbatim quote,
+                              # whose cosine is ~0.83, is not clamped to a saturated 1.0 score).
+    min_top_score: float = 0.19  # Return no results below this best-match score (0 = disabled).
 
 
 class Hit(NamedTuple):
@@ -189,6 +190,24 @@ class SearchEngine:
         order = sorted(range(len(ids)), key=lambda j: (-float(score[j]), ids[j]))
         return [(ids[j], float(score[j])) for j in order]
 
+    def _drop_overlapping(self, ranked):
+        """Keep only the best hit per verse span.
+
+        The index stores single verses plus 2-3 verse windows, so the same verse can reach the
+        results several times (46:4, 46:4-5, 46:3-5, ...). Once a span is returned, every other
+        hit overlapping it in the same chapter is redundant and is skipped.
+        """
+        kept, occupied = [], {}
+        for idx, score in ranked:
+            p = self.meta[idx]
+            spans = occupied.setdefault((p["book"], p["chapter"]), [])
+            start, end = p["start"], p["end"]
+            if any(start <= s_end and s_start <= end for s_start, s_end in spans):
+                continue
+            spans.append((start, end))
+            kept.append((idx, score))
+        return kept
+
     # -- search -------------------------------------------------------------------------------
     def search(self, query, size=8, semantic_only=False):
         """Return a list of Hit objects, from best to worst."""
@@ -223,4 +242,5 @@ class SearchEngine:
 
         if not ranked or ranked[0][1] < c.min_top_score:
             return []  # No convincing answer (off-topic query, gibberish, etc.).
+        ranked = self._drop_overlapping(ranked)
         return [Hit(i, float(sem_raw[i]), float(kw[i]), s) for i, s in ranked[:size]]

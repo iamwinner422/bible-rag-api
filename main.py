@@ -19,7 +19,7 @@ MAX_SEMANTIC_RESULTS = 16
 
 log = logging.getLogger("uvicorn.error")
 
-state = {"engine": None, "meta": None, "error": None}
+state = {"engine": None, "meta": None, "error": None, "verses": None}
 
 def load_index():
     try:
@@ -29,6 +29,8 @@ def load_index():
             meta = json.load(file)
         state["engine"] = SearchEngine(emb, meta, config=SearchConfig())
         state["meta"] = meta
+        # The index stores single verses plus 2-3 verse windows (see scripts/build_index.py).
+        state["verses"] = sum(1 for p in meta if p.get("start") == p.get("end"))
         log.info("Search index ready: %d passages", len(meta))
     except Exception as exc:
         state["error"] = repr(exc)
@@ -104,13 +106,17 @@ def get_reference_verses(ref: BibleReference, meta: list) -> list[dict]:
     results.sort(key=lambda x: (x["chapter"], x["start"]))
     return results
 
-@app.get("/")
-def health():
+def health_payload():
     if state["error"]:
         return {"status": "error", "detail": state["error"]}
     if state["engine"] is None:
         return {"status": "loading"}
-    return {"status": "ok", "passages": len(state["meta"])}
+    return {"status": "ok", "verses": state["verses"], "passages": len(state["meta"])}
+
+@app.get("/")
+@app.get("/health")
+def health():
+    return health_payload()
 
 @app.get("/search", response_model=PaginatedResponse)
 def search(
