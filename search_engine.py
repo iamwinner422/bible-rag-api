@@ -228,7 +228,10 @@ class SearchEngine:
             # Additive bonus: a themed verse whose own cosine is mediocre (a single verse reads
             # differently from the wider passage) must still be able to outrank a merely topical one.
             score = np.minimum(score + c.w_theme * np.array([boost[i] for i in ids], dtype="float32"), 1.0)
-        order = sorted(range(len(ids)), key=lambda j: (-float(score[j]), ids[j]))
+        order = sorted(
+            range(len(ids)),
+            key=lambda j: (-float(score[j]), -float(s_vals[j]), ids[j]),
+        )
         return [(ids[j], float(score[j])) for j in order]
 
     def _drop_overlapping(self, ranked):
