@@ -1,3 +1,4 @@
+import gzip
 import json
 import logging
 import os
@@ -24,8 +25,9 @@ state = {"engine": None, "meta": None, "error": None, "verses": None}
 def load_index():
     try:
         log.info("Loading search index...")
-        emb = np.load(os.path.join(OUTPUTS, "bible_emb.npy")).astype("float32")
-        with open(os.path.join(OUTPUTS, "bible_meta.json"), encoding="utf-8") as file:
+        with gzip.open(os.path.join(OUTPUTS, "bible_emb.npy.gz"), "rb") as file:
+            emb = np.load(file).astype("float32")
+        with gzip.open(os.path.join(OUTPUTS, "bible_meta.json.gz"), "rt", encoding="utf-8") as file:
             meta = json.load(file)
         state["engine"] = SearchEngine(emb, meta, config=SearchConfig())
         state["meta"] = meta

@@ -6,7 +6,7 @@ Metrics (for each dev / test split): Hit@5, MRR@10, nDCG@10 (binary relevance).
 Expected verse lists are intentionally broad but never exhaustive: the scores are for
 COMPARING two engines, not measuring absolute accuracy.
 """
-import json, math, os, sys, time
+import gzip, json, math, os, sys, time
 
 import numpy as np
 
@@ -18,8 +18,19 @@ from search_engine import SearchEngine  # noqa: E402
 
 here = os.path.dirname(os.path.abspath(__file__))
 ev = json.load(open(os.path.join(here, "eval_queries.json"), encoding="utf-8"))
-emb = np.load(os.path.join(project, "outputs", "bible_emb.npy")).astype("float32")
-meta = json.load(open(os.path.join(project, "outputs", "bible_meta.json"), encoding="utf-8"))
+emb_path = os.path.join(project, "outputs", "bible_emb.npy.gz")
+if os.path.isfile(emb_path):
+    with gzip.open(emb_path, "rb") as file:
+        emb = np.load(file).astype("float32")
+else:
+    emb = np.load(os.path.join(project, "outputs", "bible_emb.npy")).astype("float32")
+meta_path = os.path.join(project, "outputs", "bible_meta.json.gz")
+if os.path.isfile(meta_path):
+    with gzip.open(meta_path, "rt", encoding="utf-8") as file:
+        meta = json.load(file)
+else:
+    with open(os.path.join(project, "outputs", "bible_meta.json"), encoding="utf-8") as file:
+        meta = json.load(file)
 engine = SearchEngine(emb, meta)
 
 

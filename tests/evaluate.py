@@ -9,6 +9,7 @@ Usage:
     python3 -I tests/evaluate.py --details          # include each question's result
 """
 import argparse
+import gzip
 import json
 import os
 import sys
@@ -64,14 +65,26 @@ def main():
     os.chdir(project)
     from search_engine import SearchEngine  # noqa: E402
 
-    meta = json.load(open("outputs/bible_meta.json", encoding="utf-8"))
+    meta_path = "outputs/bible_meta.json.gz"
+    if os.path.isfile(meta_path):
+        with gzip.open(meta_path, "rt", encoding="utf-8") as file:
+            meta = json.load(file)
+    else:
+        with open("outputs/bible_meta.json", encoding="utf-8") as file:
+            meta = json.load(file)
     questions = json.load(open(os.path.join(HERE, "questions.json"), encoding="utf-8"))
     known = {(p["book"], p["chapter"]) for p in meta}
     bad = [r for q in questions for r in q["refs"] if parse_ref(r)[:2] not in known]
     if bad:
         sys.exit(f"Unknown references in questions.json: {bad}")
 
-    engine = SearchEngine(np.load("outputs/bible_emb.npy").astype("float32"), meta)
+    emb_path = "outputs/bible_emb.npy.gz"
+    if os.path.isfile(emb_path):
+        with gzip.open(emb_path, "rb") as file:
+            emb = np.load(file).astype("float32")
+    else:
+        emb = np.load("outputs/bible_emb.npy").astype("float32")
+    engine = SearchEngine(emb, meta)
     rows = []
     for mode, kwargs in [("semantic", {"semantic_only": True}), ("hybrid", {})]:
         if args.details:

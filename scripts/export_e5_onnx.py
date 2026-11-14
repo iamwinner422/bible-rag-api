@@ -1,4 +1,6 @@
+import gzip
 from pathlib import Path
+import shutil
 from optimum.onnxruntime import ORTModelForFeatureExtraction
 from onnxruntime.quantization import QuantType, quantize_dynamic
 from transformers import AutoTokenizer
@@ -18,6 +20,12 @@ def main():
 
     model.save_pretrained(OUTPUT_DIR)
     tokenizer.save_pretrained(OUTPUT_DIR)
+
+    tokenizer_path = OUTPUT_DIR / "tokenizer.json"
+    compressed_tokenizer_path = OUTPUT_DIR / "tokenizer.json.gz"
+    with tokenizer_path.open("rb") as source, gzip.open(compressed_tokenizer_path, "wb", compresslevel=9) as target:
+        shutil.copyfileobj(source, target)
+    tokenizer_path.unlink()
 
     model_path = OUTPUT_DIR / "model.onnx"
     quantized_path = OUTPUT_DIR / "model.quantized.onnx"

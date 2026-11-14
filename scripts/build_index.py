@@ -1,4 +1,4 @@
-"""Rebuild the search index (outputs/bible_emb.npy + outputs/bible_meta.json).
+"""Rebuild the compressed search index (outputs/bible_emb.npy.gz + outputs/bible_meta.json.gz).
 
 No PyTorch or sentence-transformers: reuse the ONNX model in model/, the same one used by the API,
 so the generated index is exactly what the API will query.
@@ -9,6 +9,7 @@ Usage (from the project root):
     python3 scripts/build_index.py --limit 300 --out /tmp/test_index   # quick test
 """
 import argparse
+import gzip
 import json
 import os
 import sys
@@ -119,10 +120,15 @@ def main():
 
     os.makedirs(args.out, exist_ok=True)
     # float16: half the storage with no noticeable quality loss (the API reloads as float32).
-    np.save(os.path.join(args.out, "bible_emb.npy"), vecs.astype("float16"))
-    with open(os.path.join(args.out, "bible_meta.json"), "w", encoding="utf-8") as file:
+    with gzip.open(os.path.join(args.out, "bible_emb.npy.gz"), "wb", compresslevel=9) as file:
+        np.save(file, vecs.astype("float16"))
+    with gzip.open(os.path.join(args.out, "bible_meta.json.gz"), "wt", encoding="utf-8", compresslevel=9) as file:
         json.dump(passages, file, ensure_ascii=False)
-    print(f"Done: wrote bible_emb.npy and bible_meta.json to {args.out}")
+    for filename in ("bible_emb.npy", "bible_meta.json"):
+        old_path = os.path.join(args.out, filename)
+        if os.path.exists(old_path):
+            os.remove(old_path)
+    print(f"Done: wrote bible_emb.npy.gz and bible_meta.json.gz to {args.out}")
 
 
 if __name__ == "__main__":

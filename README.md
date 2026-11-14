@@ -203,8 +203,9 @@ remaining gap is theme coverage rather than ranking quality.
 
 ## Rebuild the index
 
-The generated files are `outputs/bible_emb.npy` (verse embeddings) and
-`outputs/bible_meta.json` (verse text and references). To rebuild both from the included data:
+The generated files are `outputs/bible_emb.npy.gz` (compressed verse embeddings) and
+`outputs/bible_meta.json.gz` (compressed verse text and references). To rebuild both from the
+included data:
 
 ```bash
 python scripts/build_index.py

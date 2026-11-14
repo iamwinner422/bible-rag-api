@@ -1,3 +1,4 @@
+import gzip
 import os
 import numpy as np
 import onnxruntime as ort
@@ -8,7 +9,8 @@ class E5Embedder:
     def __init__(self, model_dir="model"):
         model_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), model_dir) if not os.path.isabs(model_dir) else model_dir
 
-        self.tokenizer = Tokenizer.from_file(os.path.join(model_dir, "tokenizer.json"))
+        with gzip.open(os.path.join(model_dir, "tokenizer.json.gz"), "rt", encoding="utf-8") as file:
+            self.tokenizer = Tokenizer.from_str(file.read())
         self.tokenizer.enable_truncation(512)
         pad_id = self.tokenizer.token_to_id("[PAD]")
         if pad_id is None:
