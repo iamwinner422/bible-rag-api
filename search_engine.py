@@ -13,10 +13,10 @@ from tokenizers import Tokenizer
 
 from bm25 import BM25, Analyzer, full_phrase_length, phrase_suffix_length, term_coverage
 from themes import ThemeLayer
+from embedder_e5 import E5Embedder
 
-# paraphrase-multilingual-MiniLM-L12-v2 with a reduced vocabulary of French tokens
-# (Latin alphabet) to keep the deployed API small.
-MODEL = "paraphrase-multilingual-MiniLM-L12-v2 (French vocabulary)"
+# intfloat/multilingual-e5-small, exported as ONNX.
+MODEL = "intfloat/multilingual-e5-small"
 MODEL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "model")
 MAX_TOKENS = 128
 
@@ -157,7 +157,7 @@ class Embedder:
 
 
 def load_model():
-    return Embedder()
+    return E5Embedder("model_e5")
 
 
 @dataclass(frozen=True)
@@ -297,9 +297,13 @@ class SearchEngine:
 
         cfg = c.for_query(query, exact_only)
         sem_text = query if exact_only or not c.clean else rewrite_query(query)
-        qv = self.model.embed([sem_text])[0]
+        qv = self.model.embed([sem_text], is_query=True)[0]
         sem = self.emb @ qv
-        sem_raw = self.emb @ self.model.embed([query])[0] if sem_text != query else sem
+        sem_raw = (
+            self.emb @ self.model.embed([query], is_query=True)[0]
+            if sem_text != query
+            else sem
+        )
 
         if semantic_only:
             return [Hit(int(i), float(sem_raw[i]), 0.0, float(sem[i])) for i in np.argsort(-sem)[:size]]

@@ -1,6 +1,6 @@
 """Rebuild the search index (outputs/bible_emb.npy + outputs/bible_meta.json).
 
-No PyTorch or sentence-transformers: reuse the ONNX model in model/, the same one used by the API,
+No PyTorch or sentence-transformers: reuse the ONNX model in model_e5/, the same one used by the API,
 so the generated index is exactly what the API will query.
 Allow ~25 minutes to process the entire Bible on a single core.
 
@@ -19,8 +19,8 @@ import numpy as np
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from search_engine import MODEL, load_model  # noqa: E402
-
+from search_engine import MODEL  # noqa: E402
+from embedder_e5 import E5Embedder  # noqa: E402
 
 def load_books(path):
     """Return [(book name, [chapter = [verse texts]])] from the Bible JSON."""
@@ -103,11 +103,11 @@ def main():
         passages = passages[:args.limit]
     print(f"Embedding {len(passages)} verses ({MODEL})...")
 
-    model = load_model()
+    model = E5Embedder("model_e5")
     texts = [p["text"] for p in passages]
     parts, start = [], time.time()
     for i in range(0, len(texts), args.batch_size):
-        parts.append(model.embed(texts[i:i + args.batch_size]))
+        parts.append(model.embed(texts[i:i + args.batch_size], is_query=False))
         done = min(i + args.batch_size, len(texts))
         elapsed = time.time() - start
         print(f"  {done}/{len(texts)} ({100 * done // len(texts)}%)  "
