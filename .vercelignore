@@ -1,6 +1,5 @@
 tests/
 scripts/
-data/
 __pycache__/
 *.pyc
 .git
