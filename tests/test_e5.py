@@ -8,7 +8,7 @@ import numpy as np
 
 def main():
     print("Chargement du modèle e5...")
-    model = E5Embedder("model_e5")
+    model = E5Embedder()
 
     docs = [
         "Seigneur, enseigne-nous à prier.",

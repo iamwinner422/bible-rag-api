@@ -3,7 +3,7 @@ from optimum.onnxruntime import ORTModelForFeatureExtraction
 from transformers import AutoTokenizer
 
 MODEL_ID = "intfloat/multilingual-e5-small"
-OUTPUT_DIR = Path("model_e5")
+OUTPUT_DIR = Path("model")
 
 def main():
     OUTPUT_DIR.mkdir(exist_ok=True)

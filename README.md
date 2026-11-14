@@ -150,7 +150,7 @@ appears in the verse. A query with no sufficiently convincing match can return a
 6. A confidence threshold can suppress low-scoring results. This is a safeguard, not a guarantee
    that every off-topic query will be rejected.
 
-The embedding model is `intfloat/multilingual-e5-small`, packaged as ONNX in `model_e5/`.
+The embedding model is `intfloat/multilingual-e5-small`, packaged as ONNX in `model/`.
 Index passages use the `passage:` prefix and search queries use `query:`. Search configuration
 and ranking weights are defined by `SearchConfig` in `search_engine.py`.
 

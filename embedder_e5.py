@@ -5,7 +5,7 @@ from tokenizers import Tokenizer
 
 class E5Embedder:
     
-    def __init__(self, model_dir="model_e5"):
+    def __init__(self, model_dir="model"):
         model_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), model_dir) if not os.path.isabs(model_dir) else model_dir
 
         self.tokenizer = Tokenizer.from_file(os.path.join(model_dir, "tokenizer.json"))

@@ -8,8 +8,6 @@ from dataclasses import dataclass, replace
 from typing import NamedTuple
 
 import numpy as np
-import onnxruntime as ort
-from tokenizers import Tokenizer
 
 from bm25 import BM25, Analyzer, full_phrase_length, phrase_suffix_length, term_coverage
 from themes import ThemeLayer
@@ -18,7 +16,6 @@ from embedder_e5 import E5Embedder
 # intfloat/multilingual-e5-small, exported as ONNX.
 MODEL = "intfloat/multilingual-e5-small"
 MODEL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "model")
-MAX_TOKENS = 128
 
 # Generic French question phrasing that adds no search value, e.g. "que dit la bible sur la peur".
 _BOILERPLATE = re.compile(
@@ -123,41 +120,8 @@ def clean_query(query):
     return cleaned if len(cleaned) >= 2 else query
 
 
-class Embedder:
-    """Transform text into normalized vectors by averaging token vectors."""
-
-    def __init__(self, model_dir=MODEL_DIR):
-        self.tokenizer = Tokenizer.from_file(os.path.join(model_dir, "tokenizer.json"))
-        self.tokenizer.enable_truncation(MAX_TOKENS)
-        self.tokenizer.enable_padding(pad_id=self.tokenizer.token_to_id("<pad>"), pad_token="<pad>")
-        options = ort.SessionOptions()
-        options.enable_cpu_mem_arena = False  # Reduce memory retained between requests.
-        # model.onnx is already optimized; skipping optimization makes loading ~20x cheaper.
-        # A single thread is fastest on small instances.
-        options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_DISABLE_ALL
-        options.intra_op_num_threads = 1
-        options.inter_op_num_threads = 1
-        self.session = ort.InferenceSession(os.path.join(model_dir, "model.onnx"), options,
-                                            providers=["CPUExecutionProvider"])
-
-    def embed(self, texts, batch_size=64):
-        """Return a float32 array with one normalized vector per text."""
-        parts = []
-        for i in range(0, len(texts), batch_size):
-            encodings = self.tokenizer.encode_batch(texts[i:i + batch_size])
-            ids = np.array([e.ids for e in encodings], dtype=np.int64)
-            mask = np.array([e.attention_mask for e in encodings], dtype=np.int64)
-            tokens = self.session.run(None, {
-                "input_ids": ids, "attention_mask": mask, "token_type_ids": np.zeros_like(ids),
-            })[0].astype(np.float32)
-            weights = mask[:, :, None].astype(np.float32)
-            vecs = (tokens * weights).sum(1) / np.maximum(weights.sum(1), 1e-9)
-            parts.append(vecs / np.linalg.norm(vecs, axis=1, keepdims=True))
-        return np.vstack(parts)
-
-
 def load_model():
-    return E5Embedder("model_e5")
+    return E5Embedder(MODEL_DIR)
 
 
 @dataclass(frozen=True)
