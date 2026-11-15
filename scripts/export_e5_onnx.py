@@ -1,12 +1,14 @@
 import gzip
-from pathlib import Path
 import shutil
-from optimum.onnxruntime import ORTModelForFeatureExtraction
+from pathlib import Path
+
 from onnxruntime.quantization import QuantType, quantize_dynamic
+from optimum.onnxruntime import ORTModelForFeatureExtraction
 from transformers import AutoTokenizer
 
 MODEL_ID = "intfloat/multilingual-e5-small"
 OUTPUT_DIR = Path("model")
+
 
 def main():
     OUTPUT_DIR.mkdir(exist_ok=True)
@@ -23,7 +25,10 @@ def main():
 
     tokenizer_path = OUTPUT_DIR / "tokenizer.json"
     compressed_tokenizer_path = OUTPUT_DIR / "tokenizer.json.gz"
-    with tokenizer_path.open("rb") as source, gzip.open(compressed_tokenizer_path, "wb", compresslevel=9) as target:
+    with (
+        tokenizer_path.open("rb") as source,
+        gzip.open(compressed_tokenizer_path, "wb", compresslevel=9) as target,
+    ):
         shutil.copyfileobj(source, target)
     tokenizer_path.unlink()
 
@@ -39,6 +44,7 @@ def main():
 
     print(f"Modèle E5 exporté et quantifié en INT8 dans {OUTPUT_DIR}/")
     print(f"Taille du modèle ONNX : {model_path.stat().st_size / 1_000_000:.1f} MB")
+
 
 if __name__ == "__main__":
     main()

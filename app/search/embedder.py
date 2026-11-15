@@ -1,15 +1,23 @@
 import gzip
-import os
+from pathlib import Path
+
 import numpy as np
 import onnxruntime as ort
 from tokenizers import Tokenizer
 
-class E5Embedder:
-    
-    def __init__(self, model_dir="model"):
-        model_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), model_dir) if not os.path.isabs(model_dir) else model_dir
 
-        with gzip.open(os.path.join(model_dir, "tokenizer.json.gz"), "rt", encoding="utf-8") as file:
+class E5Embedder:
+    def __init__(self, model_dir=None):
+        project_root = Path(__file__).resolve().parents[2]
+        model_path = (
+            Path(model_dir) if model_dir is not None else project_root / "model"
+        )
+        if not model_path.is_absolute():
+            model_path = project_root / model_path
+
+        with gzip.open(
+            model_path / "tokenizer.json.gz", "rt", encoding="utf-8"
+        ) as file:
             self.tokenizer = Tokenizer.from_str(file.read())
         self.tokenizer.enable_truncation(512)
         pad_id = self.tokenizer.token_to_id("[PAD]")
@@ -24,7 +32,7 @@ class E5Embedder:
         options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_BASIC
 
         self.session = ort.InferenceSession(
-            os.path.join(model_dir, "model.onnx"),
+            str(model_path / "model.onnx"),
             options,
             providers=["CPUExecutionProvider"],
         )
@@ -64,7 +72,7 @@ class E5Embedder:
                 feeds["token_type_ids"] = np.zeros_like(ids)
 
             outputs = self.session.run(None, feeds)
-            token_embeddings = outputs[0].astype(np.float32)
+            token_embeddings = np.asarray(outputs[0], dtype=np.float32)
 
             vecs = self._mean_pooling(token_embeddings, mask)
             norms = np.linalg.norm(vecs, axis=1, keepdims=True)

@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bible-rag-api"
+version = "2.1.0"
+description = "Hybrid semantic and lexical search API for the French Louis Segond Bible"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.110,<1",
+    "numpy>=1.26,<3",
+    "onnxruntime>=1.17,<2",
+    "pydantic>=2.6,<3",
+    "tokenizers>=0.15,<1",
+    "uvicorn[standard]>=0.27,<1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "httpx>=0.27,<1",
+    "pytest>=8,<9",
+    "pyright>=1.1.400,<2",
+    "ruff>=0.9,<1",
+]
+export = [
+    "optimum[onnxruntime]>=1.17,<2",
+    "transformers>=4.40,<5",
+]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests/unit", "tests/integration"]
+addopts = "-ra"
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+ignore = ["E501"]
+
+[tool.pyright]
+include = ["app"]
+pythonVersion = "3.12"
+typeCheckingMode = "basic"

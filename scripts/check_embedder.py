@@ -1,10 +1,7 @@
-"""Test rapide de l'embedder e5."""
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+"""Quick manual check of the E5 embeddings (run with ``python -m scripts.check_embedder``)."""
 
-from embedder_e5 import E5Embedder  # ou depuis le bon module
-import numpy as np
+from app.search.embedder import E5Embedder
+
 
 def main():
     print("Chargement du modèle e5...")
@@ -24,6 +21,7 @@ def main():
     print("Similarités (plus haut = plus pertinent) :")
     for text, score in sorted(zip(docs, scores), key=lambda x: -x[1]):
         print(f"  {score:.3f}  |  {text}")
+
 
 if __name__ == "__main__":
     main()

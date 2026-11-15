@@ -1,4 +1,5 @@
 """French text analysis and BM25 (NumPy only; no heavy dependencies)."""
+
 import math
 import re
 import unicodedata
@@ -43,7 +44,7 @@ class Analyzer:
         if self.plural and len(word) > 3 and word[-1] in "sx":
             word = word[:-1]
         if self.stem_len and len(word) > self.stem_len:
-            word = word[:self.stem_len]
+            word = word[: self.stem_len]
         return word
 
     def tokens(self, text):
@@ -58,7 +59,7 @@ class Analyzer:
 def _contains(text_tokens, phrase_tokens):
     width = len(phrase_tokens)
     return width > 0 and any(
-        text_tokens[i:i + width] == phrase_tokens
+        text_tokens[i : i + width] == phrase_tokens
         for i in range(len(text_tokens) - width + 1)
     )
 
@@ -102,10 +103,16 @@ class BM25:
         for i, d in enumerate(docs):
             for w, c in Counter(d).items():
                 post[w].append((i, c))
-        self.ids = {w: np.array([i for i, _ in p], dtype="int32") for w, p in post.items()}
-        self.tfs = {w: np.array([c for _, c in p], dtype="float32") for w, p in post.items()}
-        self.idf = {w: math.log(1 + (self.n - len(p) + 0.5) / (len(p) + 0.5))
-                    for w, p in post.items()}
+        self.ids = {
+            w: np.array([i for i, _ in p], dtype="int32") for w, p in post.items()
+        }
+        self.tfs = {
+            w: np.array([c for _, c in p], dtype="float32") for w, p in post.items()
+        }
+        self.idf = {
+            w: math.log(1 + (self.n - len(p) + 0.5) / (len(p) + 0.5))
+            for w, p in post.items()
+        }
 
     def scores(self, query):
         s = np.zeros(self.n, dtype="float32")

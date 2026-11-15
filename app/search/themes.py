@@ -5,14 +5,15 @@ generic sentence encoder only finds verses that *talk about* fear, not the canon
 layer closes that gap with curated data instead of another model: query terms select a theme, and
 the theme's reference verses are promoted in the ranking.
 """
+
 import json
-import os
 import re
 import unicodedata
+from pathlib import Path
 
 import numpy as np
 
-DEFAULT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "themes.json")
+DEFAULT_PATH = Path(__file__).resolve().parents[2] / "data" / "themes.json"
 
 # One matched term is already strong evidence: "peur" must be able to outrank a verse that merely
 # mentions fear, so even a single match is near full strength.
@@ -35,11 +36,11 @@ class ThemeLayer:
     """Curated themes with their reference verses, and matching against a query."""
 
     def __init__(self, meta, path=None):
-        self.masks = {}      # theme id -> float32 boost array aligned with the index
-        self.labels = {}     # theme id -> human label
-        self.terms = {}      # theme id -> normalized detection terms
-        path = path or DEFAULT_PATH
-        if not os.path.exists(path):
+        self.masks = {}  # theme id -> float32 boost array aligned with the index
+        self.labels = {}  # theme id -> human label
+        self.terms = {}  # theme id -> normalized detection terms
+        path = Path(path) if path is not None else DEFAULT_PATH
+        if not path.exists():
             self._empty = True
             return
         self._empty = False
@@ -52,7 +53,7 @@ class ThemeLayer:
         for i, entry in enumerate(meta):
             position.setdefault(_ref(entry), i)
 
-        with open(path, encoding="utf-8") as fh:
+        with path.open(encoding="utf-8") as fh:
             data = json.load(fh)
         for theme in data["themes"]:
             indexes = [position[r] for r in theme["verses"] if r in position]
@@ -62,7 +63,9 @@ class ThemeLayer:
             mask[indexes] = 1.0
             self.masks[theme["id"]] = mask
             self.labels[theme["id"]] = theme["label"]
-            self.terms[theme["id"]] = [t for t in (normalize(x) for x in theme["terms"]) if t]
+            self.terms[theme["id"]] = [
+                t for t in (normalize(x) for x in theme["terms"]) if t
+            ]
 
     def __len__(self):
         return len(self.masks)

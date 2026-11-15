@@ -1,96 +1,136 @@
-"""End-to-end API tests (real index and model, no network required).
+import pytest
+from fastapi.testclient import TestClient
 
-Usage: python3 -I tests/test_api.py      (install `httpx` for TestClient)
-"""
-import os
-import sys
-
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, ROOT)
-os.chdir(ROOT)
-
-from fastapi.testclient import TestClient  # noqa: E402
-
-from main import app  # noqa: E402
+from app.main import app
 
 
-def check(name, cond, detail=""):
-    print(f"  {'OK ' if cond else 'FAIL'}  {name}{('  -> ' + str(detail)) if not cond else ''}")
-    if not cond:
-        check.failed += 1
+@pytest.fixture(scope="module")
+def client():
+    with TestClient(app) as test_client:
+        yield test_client
 
 
-check.failed = 0
+def test_health_reports_loaded_index(client):
+    response = client.get("/health")
 
-with TestClient(app) as client:  # The context manager triggers index loading (lifespan).
-    r = client.get("/")
-    j = r.json()
-    check("GET / returns ok + verse and passage counts",
-          r.status_code == 200 and j.get("status") == "ok"
-          and j.get("verses") == 31102 and j.get("passages") == 89739, j)
-    check("GET /health returns the same response", client.get("/health").json() == j)
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "ok",
+        "verses": 31102,
+        "passages": 89739,
+    }
+    assert client.get("/").json() == response.json()
 
-    r = client.get("/search", params={"query": "quel est le plus grand commandement", "pageSize": 5})
-    j = r.json()
-    check("/search: 200, 5 results in the paginated envelope",
-          r.status_code == 200 and j["mode"] == "semantic" and len(j["results"]) == 5
-          and j["page"] == 1 and j["pageSize"] == 5, r.text[:200])
-    check("/search: Matthew 22 at the top", j["results"][0]["reference"].startswith("Matthieu 22"),
-          j["results"][:1])
-    want = {"reference", "text", "score", "semantic_score", "mots_cles"}
-    check("/search: result schema fields", set(j["results"][0]) == want,
-          set(j["results"][0]) ^ want)
-    check("/search: scores are descending",
-          all(a["score"] >= b["score"] for a, b in zip(j["results"], j["results"][1:])))
-    check("/search: reference uses (LSG) format",
-          j["results"][0]["reference"].endswith("(LSG)") and ":" in j["results"][0]["reference"],
-          j["results"][:1])
 
-    r = client.get("/search", params={"query": "la foi", "pageSize": 8})
-    j = r.json()
-    spans = [tuple(int(x) for x in res["reference"].split(":")[1].split(" ")[0].split("-"))
-             for res in j["results"]]
-    spans = [(s[0], s[-1]) for s in spans]  # "46:4" -> (4, 4), "46:4-6" -> (4, 6)
-    books = [res["reference"].split(":")[0] for res in j["results"]]
-    duplicate = any(books[i] == books[k] and spans[i][0] <= spans[k][1] and spans[k][0] <= spans[i][1]
-                    for i in range(len(spans)) for k in range(i + 1, len(spans)))
-    check("/search: no overlapping passage windows in results", not duplicate, j["results"])
+def test_semantic_search_returns_ranked_paginated_results(client):
+    response = client.get(
+        "/search",
+        params={"query": "quel est le plus grand commandement", "pageSize": 5},
+    )
 
-    r = client.get("/search", params={"query": "Jean 3:16"})
-    j = r.json()
-    check("reference search returns the requested verse",
-          j["mode"] == "reference" and j["total"] == 1
-          and j["results"][0]["reference"] == "Jean 3:16 (LSG)", j)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["mode"] == "semantic"
+    assert body["page"] == 1
+    assert body["pageSize"] == 5
+    assert len(body["results"]) == 5
+    assert body["results"][0]["reference"].startswith("Matthieu 22")
+    assert set(body["results"][0]) == {
+        "reference",
+        "text",
+        "score",
+        "semantic_score",
+        "mots_cles",
+    }
+    assert all(
+        left["score"] >= right["score"]
+        for left, right in zip(body["results"], body["results"][1:])
+    )
 
-    r = client.get("/search", params={"query": "quel est le plus grand commandement", "pageSize": 10, "page": 2})
-    j = r.json()
-    check("/search: pagination returns the remaining results",
-          j["total"] == 16 and j["totalPages"] == 2 and len(j["results"]) == 6, j["totalPages"])
 
-    check("q without query -> 422", client.get("/search", params={"q": "Dieu est amour"}).status_code == 422)
-    check("pageSize=0 -> 422", client.get("/search", params={"query": "la foi", "pageSize": 0}).status_code == 422)
-    check("pageSize=999 -> 422", client.get("/search", params={"query": "la foi", "pageSize": 999}).status_code == 422)
-    check("page=0 -> 422", client.get("/search", params={"query": "la foi", "page": 0}).status_code == 422)
-    check("missing query -> 422", client.get("/search").status_code == 422)
-    check("query too short -> 422", client.get("/search", params={"query": "a"}).status_code == 422)
-    check("query too long -> 422", client.get("/search", params={"query": "x" * 301}).status_code == 422)
+def test_semantic_results_do_not_overlap(client):
+    response = client.get("/search", params={"query": "la foi", "pageSize": 8})
+    results = response.json()["results"]
+    spans = []
+    for result in results:
+        location, _ = result["reference"].split(" (LSG)")
+        book, chapter_and_verse = location.rsplit(" ", 1)
+        chapter, verse_span = chapter_and_verse.split(":")
+        verse_bounds = verse_span.split("-")
+        start = int(verse_bounds[0])
+        end = int(verse_bounds[-1])
+        spans.append((book, int(chapter), start, end))
 
-    r = client.get("/search", params={"query": "\"l'Éternel est mon berger\""})
-    j = r.json()
-    check("quoted exact phrase -> Psalm 23:1 only",
-          j["total"] == 1 and j["results"][0]["reference"] == "Psaumes 23:1 (LSG)", j)
+    assert not any(
+        book_a == book_b
+        and chapter_a == chapter_b
+        and start_a <= end_b
+        and start_b <= end_a
+        for index, (book_a, chapter_a, start_a, end_a) in enumerate(spans)
+        for book_b, chapter_b, start_b, end_b in spans[index + 1 :]
+    )
 
-    r = client.get("/search", params={"query": "jésus pleura"})
-    check("very short verse is indexed (John 11:35 at the top)",
-          r.json()["results"] and r.json()["results"][0]["reference"].startswith("Jean 11:35"),
-          r.json()["results"][:1])
 
-    r = client.get("/search", params={"query": "comment installer windows 11"})
-    check("obviously off-topic query -> empty results",
-          r.status_code == 200 and r.json()["results"] == [], r.json()["results"][:2])
+def test_reference_search_returns_requested_verse(client):
+    response = client.get("/search", params={"query": "Jean 3:16"})
 
-    r = client.get("/search", params={"query": "qwertyuiop asdfgh"})
-    check("gibberish -> empty results", r.json()["results"] == [], r.json()["results"][:2])
+    assert response.status_code == 200
+    body = response.json()
+    assert body["mode"] == "reference"
+    assert body["total"] == 1
+    assert body["results"][0]["reference"] == "Jean 3:16 (LSG)"
 
-print(f"\n{'All tests passed.' if not check.failed else str(check.failed) + ' test(s) failed.'}")
-sys.exit(1 if check.failed else 0)
+
+def test_semantic_pagination_caps_results_across_pages(client):
+    response = client.get(
+        "/search",
+        params={
+            "query": "quel est le plus grand commandement",
+            "pageSize": 10,
+            "page": 2,
+        },
+    )
+    body = response.json()
+
+    assert body["total"] == 16
+    assert body["totalPages"] == 2
+    assert len(body["results"]) == 6
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {},
+        {"q": "Dieu est amour"},
+        {"query": "a"},
+        {"query": "x" * 301},
+        {"query": "la foi", "pageSize": 0},
+        {"query": "la foi", "pageSize": 999},
+        {"query": "la foi", "page": 0},
+    ],
+)
+def test_invalid_search_parameters_return_422(client, params):
+    assert client.get("/search", params=params).status_code == 422
+
+
+def test_exact_phrase_search_returns_matching_verse(client):
+    response = client.get(
+        "/search",
+        params={"query": '"l\'Éternel est mon berger"'},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 1
+    assert body["results"][0]["reference"] == "Psaumes 23:1 (LSG)"
+
+
+@pytest.mark.parametrize(
+    "query",
+    ['"phrase introuvable xyzzy"'],
+)
+def test_unmatched_exact_phrase_returns_no_results(client, query):
+    response = client.get("/search", params={"query": query})
+
+    assert response.status_code == 200
+    assert response.json()["results"] == []

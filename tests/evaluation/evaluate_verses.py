@@ -1,61 +1,95 @@
-"""Evaluate a search engine (v1 or merged) on tests/eval_queries.json.
+"""Evaluate search quality using Hit@5, MRR@10 and nDCG@10."""
 
-Usage: python3 -I tests/evaluate_verses.py <project-folder> [--verbose]
-The folder must contain search_engine.py (with SearchEngine) and outputs/.
-Metrics (for each dev / test split): Hit@5, MRR@10, nDCG@10 (binary relevance).
-Expected verse lists are intentionally broad but never exhaustive: the scores are for
-COMPARING two engines, not measuring absolute accuracy.
-"""
-import gzip, json, math, os, sys, time
+import argparse
+import gzip
+import json
+import math
+import time
+from pathlib import Path
 
 import numpy as np
 
-project = os.path.abspath(sys.argv[1])
-verbose = "--verbose" in sys.argv
-sys.path.insert(0, project)
-os.chdir(project)
-from search_engine import SearchEngine  # noqa: E402
+from tests.evaluation.project_loader import load_search_engine
 
-here = os.path.dirname(os.path.abspath(__file__))
-ev = json.load(open(os.path.join(here, "eval_queries.json"), encoding="utf-8"))
-emb_path = os.path.join(project, "outputs", "bible_emb.npy.gz")
-if os.path.isfile(emb_path):
-    with gzip.open(emb_path, "rb") as file:
-        emb = np.load(file).astype("float32")
-else:
-    emb = np.load(os.path.join(project, "outputs", "bible_emb.npy")).astype("float32")
-meta_path = os.path.join(project, "outputs", "bible_meta.json.gz")
-if os.path.isfile(meta_path):
-    with gzip.open(meta_path, "rt", encoding="utf-8") as file:
-        meta = json.load(file)
-else:
-    with open(os.path.join(project, "outputs", "bible_meta.json"), encoding="utf-8") as file:
-        meta = json.load(file)
-engine = SearchEngine(emb, meta)
+HERE = Path(__file__).resolve().parent
 
 
-def ref(i):
-    p = meta[i]
-    return f"{p['book']} {p['chapter']}:{p['start']}"
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("project", type=Path)
+    parser.add_argument("--verbose", action="store_true")
+    args = parser.parse_args()
+    project = args.project.resolve()
+    SearchEngine = load_search_engine(project)
+
+    with (HERE / "eval_queries.json").open(encoding="utf-8") as file:
+        evaluation_data = json.load(file)
+
+    embeddings_path = project / "outputs" / "bible_emb.npy.gz"
+    if embeddings_path.is_file():
+        with gzip.open(embeddings_path, "rb") as file:
+            embeddings = np.load(file).astype("float32")
+    else:
+        embeddings = np.load(project / "outputs" / "bible_emb.npy").astype("float32")
+    meta_path = project / "outputs" / "bible_meta.json.gz"
+    if meta_path.is_file():
+        with gzip.open(meta_path, "rt", encoding="utf-8") as file:
+            meta = json.load(file)
+    else:
+        with (project / "outputs" / "bible_meta.json").open(encoding="utf-8") as file:
+            meta = json.load(file)
+
+    engine = SearchEngine(embeddings, meta)
+
+    def reference(index):
+        passage = meta[index]
+        return f"{passage['book']} {passage['chapter']}:{passage['start']}"
+
+    for split in ("dev", "test"):
+        hit_at_five, reciprocal_ranks, ndcgs, durations = [], [], [], []
+        for item in evaluation_data[split]:
+            gold = set(item["gold"])
+            start = time.time()
+            results = engine.search(item["q"], size=10)
+            got = [reference(result[0]) for result in results]
+            durations.append(time.time() - start)
+            relevance = [int(result in gold) for result in got]
+            hit_at_five.append(float(any(relevance[:5])))
+            reciprocal_ranks.append(
+                next(
+                    (
+                        1 / (rank + 1)
+                        for rank, is_relevant in enumerate(relevance)
+                        if is_relevant
+                    ),
+                    0.0,
+                )
+            )
+            dcg = sum(
+                value / math.log2(rank + 2) for rank, value in enumerate(relevance)
+            )
+            ideal_dcg = sum(
+                1 / math.log2(rank + 2) for rank in range(min(len(gold), 10))
+            )
+            ndcgs.append(dcg / ideal_dcg if ideal_dcg else 0.0)
+            if args.verbose:
+                print(
+                    f"[{split}] {item['q']}  hit5={int(hit_at_five[-1])} "
+                    f"mrr={reciprocal_ranks[-1]:.2f}"
+                )
+                for rank, result in enumerate(results[:5]):
+                    marker = "✓" if relevance[rank] else " "
+                    passage = meta[result[0]]
+                    print(f"     {marker} {got[rank]}  {passage['text'][:70]}")
+
+        print(
+            f"{split:5s}  n={len(hit_at_five):2d}  "
+            f"Hit@5={np.mean(hit_at_five):.2f}  "
+            f"MRR@10={np.mean(reciprocal_ranks):.2f}  "
+            f"nDCG@10={np.mean(ndcgs):.2f}  "
+            f"avg latency={np.mean(durations) * 1000:.0f} ms"
+        )
 
 
-for split in ("dev", "test"):
-    hit5, mrr, ndcg, times = [], [], [], []
-    for item in ev[split]:
-        gold = set(item["gold"])
-        t = time.time()
-        hits = engine.search(item["q"], size=10)
-        got = [ref(r[0]) for r in hits]
-        times.append(time.time() - t)
-        rel = [1 if g in gold else 0 for g in got]
-        hit5.append(1.0 if any(rel[:5]) else 0.0)
-        mrr.append(next((1 / (k + 1) for k, v in enumerate(rel) if v), 0.0))
-        dcg = sum(v / math.log2(k + 2) for k, v in enumerate(rel))
-        idcg = sum(1 / math.log2(k + 2) for k in range(min(len(gold), 10)))
-        ndcg.append(dcg / idcg if idcg else 0.0)
-        if verbose:
-            print(f"[{split}] {item['q']}  hit5={int(hit5[-1])} mrr={mrr[-1]:.2f}")
-            for k, g in enumerate(got[:5]):
-                print(f"     {'✓' if rel[k] else ' '} {g}  {meta[hits[k][0]]['text'][:70]}")
-    print(f"{split:5s}  n={len(hit5):2d}  Hit@5={np.mean(hit5):.2f}  MRR@10={np.mean(mrr):.2f}  "
-          f"nDCG@10={np.mean(ndcg):.2f}  avg latency={np.mean(times) * 1000:.0f} ms")
+if __name__ == "__main__":
+    main()

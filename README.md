@@ -23,6 +23,9 @@ model service.
 
 The model and prebuilt index are included in the repository; you do not need to download model
 weights to run the API. Rebuilding the index additionally requires `data/bible_fr.json`.
+Runtime dependencies are declared in `pyproject.toml` and exposed through `requirements.txt`.
+For local development, install the test and quality tools with `pip install -e ".[dev]"` (or
+`pip install -r requirements-dev.txt`).
 
 ## Installation
 
@@ -34,14 +37,14 @@ Clone or download the repository, then run these commands from its root director
 py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-pip install -r requirements.txt
+pip install -e ".[dev]"
 ```
 
 If PowerShell blocks activation, either adjust the execution policy for your user or use the
 environment's interpreter directly:
 
 ```powershell
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
 ```
 
 ### macOS / Linux
@@ -50,7 +53,7 @@ environment's interpreter directly:
 python3.12 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-pip install -r requirements.txt
+pip install -e ".[dev]"
 ```
 
 ## Run the API
@@ -58,7 +61,7 @@ pip install -r requirements.txt
 From the project root, start the ASGI server:
 
 ```bash
-uvicorn main:app --host 127.0.0.1 --port 8000
+uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
 On startup, the API loads the ONNX model and the prebuilt verse index. Once it is ready, open:
@@ -153,45 +156,56 @@ appears in the verse. A query with no sufficiently convincing match can return a
 The embedding model is `intfloat/multilingual-e5-small`, packaged as an INT8-quantized ONNX model
 in `model/`.
 Index passages use the `passage:` prefix and search queries use `query:`. Search configuration
-and ranking weights are defined by `SearchConfig` in `search_engine.py`.
+and ranking weights are defined by `SearchConfig` in `app/search/engine.py`.
 
 ## Tests and evaluation
 
-Run commands from the project root after installing `requirements.txt`.
+Run commands from the project root after installing development dependencies with
+`pip install -e ".[dev]"`.
 
 ### API integration tests
 
-These tests load the real model and index and exercise the API through FastAPI's test client:
+Unit tests use small fixtures. API integration tests also load the real model and index:
 
 ```bash
-python -I tests/test_api.py
+python -m pytest
 ```
 
-The checks cover health status and counts, result fields and ordering, pagination, the absence of
-overlapping results, accepted parameters, exact-phrase search, validation, and low-confidence
-queries.
+Run only the fast unit tests with `python -m pytest tests/unit`. The integration tests cover health
+status and counts, result fields and ordering, pagination, non-overlapping results, validation,
+and matching and non-matching exact-phrase searches. The confidence threshold does not guarantee
+that every unrelated query returns no results.
+
+Run the configured quality checks from the project root:
+
+```bash
+python -m ruff check app scripts tests main.py
+python -m ruff format --check app scripts tests main.py
+python -m pyright
+```
 
 ### Search-quality evaluation
 
-Evaluate semantic-only and hybrid search on `tests/questions.json`:
+Evaluate semantic-only and hybrid search on `tests/evaluation/questions.json`:
 
 ```bash
-python -I tests/evaluate.py
-python -I tests/evaluate.py --details
+python -m tests.evaluation.evaluate
+python -m tests.evaluation.evaluate --details
 ```
 
 Evaluate Hit@5, MRR@10, and nDCG@10 on the dev and test splits in
-`tests/eval_queries.json`:
+`tests/evaluation/eval_queries.json`:
 
 ```bash
-python -I tests/evaluate_verses.py .
-python -I tests/evaluate_verses.py . --verbose
+python -m tests.evaluation.evaluate_verses .
+python -m tests.evaluation.evaluate_verses . --verbose
 ```
 
-`tests/eval_queries.json` holds 36 dev and 34 test queries, half of them paraphrased questions that
-do not contain the theme's keyword. Their expected references are not exhaustive, so treat the
-scores as comparative measures between engine versions, not as absolute accuracy estimates. The
-`test` split has also been used during tuning and is not a strictly independent benchmark.
+`tests/evaluation/eval_queries.json` holds 36 dev and 34 test queries, half of them paraphrased
+questions that do not contain the theme's keyword. Their expected references are not exhaustive,
+so treat the scores as comparative measures between engine versions, not as absolute accuracy
+estimates. The `test` split has also been used during tuning and is not a strictly independent
+benchmark.
 
 The theme layer was written independently of this dataset, but 216 of the 421 expected references
 are listed in it. Read the scores accordingly. On queries whose expected verse is covered by a
@@ -208,41 +222,52 @@ The generated files are `outputs/bible_emb.npy.gz` (compressed verse embeddings)
 included data:
 
 ```bash
-python scripts/build_index.py
+python -m scripts.build_index
 ```
 
 This reuses the same model as the API and may take about 25 minutes on a single CPU core. To run a
 small test build in a separate directory:
 
 ```bash
-python scripts/build_index.py --limit 300 --out outputs-test
+python -m scripts.build_index --limit 300 --out outputs-test
 ```
 
 Other options include `--data PATH`, `--out PATH`, `--limit N`, and `--batch-size N`; run
-`python scripts/build_index.py --help` for details. A full rebuild writes to `outputs/`, replacing
-the current generated index files.
+`python -m scripts.build_index --help` for details. A full rebuild writes to `outputs/`, replacing
+the current generated index files. Install the optional export dependencies with
+`pip install -e ".[export]"` to run `scripts/export_e5_onnx.py`.
 
 ## Project layout
 
 ```text
 .
-├── main.py                 # FastAPI application and endpoints
-├── search_engine.py        # Embeddings, candidate retrieval, and ranking
-├── bm25.py                 # French text analysis and BM25 implementation
-├── requirements.txt        # Python dependencies
+├── app/
+│   ├── main.py             # FastAPI app and startup lifecycle
+│   ├── api/                # Routes and response schemas
+│   ├── services/           # Search orchestration and index loading
+│   ├── search/             # Ranking, BM25, themes, and ONNX embeddings
+│   └── references.py       # Bible reference parsing and lookup
+├── main.py                 # Compatibility entry point for main:app deployments
+├── pyproject.toml          # Package metadata and development-tool configuration
+├── requirements.txt        # Runtime installation entry point
+├── requirements-dev.txt    # Optional development installation entry point
 ├── model/                  # ONNX model and tokenizer
 ├── outputs/                # Prebuilt verse embeddings and metadata
 ├── data/                   # Source Bible JSON used to rebuild the index
-├── scripts/build_index.py  # Index-generation script
-└── tests/                  # API tests and evaluation datasets/scripts
+├── scripts/                # Index builder, model export, and diagnostics
+└── tests/
+    ├── unit/
+    ├── integration/
+    └── evaluation/         # Search-quality scripts and datasets
 ```
 
 ## Deployment
 
-The project includes Vercel configuration. The FastAPI application is exposed as `app` in
-`main.py`, Python 3.12 is specified in `.python-version`, and dependencies are listed in
-`requirements.txt`. `.vercelignore` excludes `tests/`, `scripts/`, and `data/` from deployment;
-the prebuilt `model/` and `outputs/` directories are needed at runtime.
+The project includes Vercel configuration. The ASGI entry point remains available as `main:app`
+through the root compatibility module; the application itself lives in `app/main.py`. Python 3.12
+is specified in `.python-version`, and runtime dependencies are declared in `pyproject.toml` and
+installed through `requirements.txt`. `.vercelignore` excludes tests, scripts, and the source Bible
+JSON; `data/themes.json`, `model/`, and `outputs/` are needed at runtime.
 
 ## Known limitations
 
