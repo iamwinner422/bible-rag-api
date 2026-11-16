@@ -250,4 +250,4 @@ the prebuilt `model/` and `outputs/` directories are needed at runtime.
 - Semantic matching can miss narrative paraphrases that do not closely resemble a verse.
 - The confidence threshold does not reject every unrelated query.
 - Psalm verse numbering in the source appears to follow KJV numbering in some cases and may differ
-  from a printed Bible edition.
+  from a printed Bible edition
